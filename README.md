@@ -3,9 +3,13 @@ Datamining final project Spring 2021
 Languages: R, Python?
 
 -- Block Assignments --
+
 Lila - 2 (Network)
+
 Connor - 3 (Sim vector dataset)
+
 Desmond - 4 (Sim vector comparison/output)
+
 Michael - 1 (data ETL)
 
 Block 1: Image Importing & Scaling
