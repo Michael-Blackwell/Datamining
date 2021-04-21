@@ -9,7 +9,6 @@ from numpy import dot
 from numpy.linalg import norm
 import pandas as pd
 from tqdm import tqdm
-import pathlib
 
 ########################
 # ---- Parameters ---- #
@@ -17,15 +16,16 @@ import pathlib
 top_images = 3
 image_width, image_height = 260, 260
 batch_size = 1
-numclasses = 1000
 
 ############################
 # ---- Path Variables ---- #
 ############################
 main_dir = '/home/mike/Public/School/datamining/Project'
+
 test_img_dir = main_dir + '/test'
 train_data_path = main_dir + '/imagenet-mini/train'
 val_data_path = main_dir + '/imagenet-mini/val'
+pickling_path = main_dir + '/pickles/features_df'
 
 #######################
 # ---- Functions ---- #
@@ -36,20 +36,22 @@ def load_model(classes):
         weights="imagenet",
         classes=classes
     )
-    # Get image features from penultimate layer
+    # Create object to extract image features from penultimate layer
     feat_extractor = Model(inputs=model.input, outputs=model.get_layer('avg_pool').output)
     return model, feat_extractor
 
 
-def import_data(main_directory):
-    # import labels
+def import_class_labels(main_directory):
+    # import labels from disk into a dataframe
     labels = pd.read_json(main_directory + '/imagenet-simple-labels.json')
     labels.rename(columns={0: 'Label'}, inplace=True)
 
     # list of folder labels from dataset
     files = os.listdir(main_directory + '/imagenet-mini/train')
     files.sort()
+    # sorting the class folders ensures they are in the same order as the labels list
     file_names = pd.DataFrame({'filename': files})
+    # join the two df's together so we have a mapping of folder name to class name.
     labels = labels.join(file_names)
     return labels
 
@@ -64,23 +66,31 @@ def create_dataset(path, img_width, img_height, batch):
     return dataset
 
 
-def import_images(path):
-    # load images from disk into a dataset
-    image_name_map = {}
-    for root, dirs, files in os.walk(path):
-        for name in tqdm(files, desc='Mapping Images'):
-            image_name_map[os.path.join(root, name)] = name
-    importedimages = []
-    count = 0
-    for image in tqdm(image_name_map, desc='Importing Images'):
-        count += 1
-        original = load_img(image, target_size=(image_width, image_height))
-        numpy_image = img_to_array(original)
-        image_batch = np.expand_dims(numpy_image, axis=0)
-        importedimages.append(image_batch)
-    images = np.vstack(importedimages)
-    processed_imgs = preprocess_input(images.copy())
-    return image_name_map, processed_imgs
+def import_gen(image_name_map, f_extractor):
+    # generator object for importing raw images
+    for _ in tqdm(image_name_map, desc='Importing Images'):
+        original_img = load_img(_, target_size=(image_width, image_height))
+        img_array = img_to_array(original_img)
+        reshaped_img_array = np.expand_dims(img_array, axis=0)
+        normalized_img_array = preprocess_input(reshaped_img_array)
+        yield _, f_extractor.predict(normalized_img_array)
+
+
+def import_images(path, feature_extractor):
+    # load raw images from disk & return features dataframe
+    image_name_map = []
+    # Create a list of images to be imported (image paths on disk)
+    for root, dirs, files in tqdm(os.walk(path), desc='Mapping Images'):
+        for name in files:
+            image_name_map.append(os.path.join(root, name))
+    # Create empty dataframe for features to be pasted into
+    features_df = pd.DataFrame(columns=np.arange(feature_extractor.output.shape[1]), index=image_name_map)
+    # Use generator object 'import_gen' to iterate over list of image paths, extract feats, and paste into df
+    # (approx 30 min with i7 6600k 4GHz)
+    for label, features in tqdm(import_gen(image_name_map, feature_extractor), desc='Importing Images'):
+        features_df.loc[label] = features
+    # Serialize the features df so this lengthy process does not need to be run every time.
+    return features_df
 
 
 def cosine_sim(a, b): return dot(a, b)/(norm(a)*norm(b))
@@ -91,21 +101,13 @@ def jaccard_sim(a, b): return
 # Computes jaccard similarity score of two numpy arrays
 
 
-def predict(test_img_path, feature_extractor, features_df):
+def compare_similarity(test_features, features_df):
     # Identifies and returns the dataset images most similar to the test image
-    # import test image
-    test_data = pathlib.Path(test_img_path)
-    test_image_names, test_ds = import_images(test_data)
-
-    # get features of test image
-    test_image_features = feature_extractor.predict(test_ds)
-
-    # Compute Similarity Indicies
-
-    # Cosine Sim
+    # Compute Cosine Sim
     cos_similarities_df = pd.DataFrame(columns=['Cos Sim'])
-    for index in features_df.index:
-        cos_similarities_df.loc[index] = cosine_sim(features_df.loc[index], test_image_features[0])
+    test_feat_indx = list(test_features.index)[0]
+    for index in tqdm(features_df.index, desc="Computing Cosine Similarity:"):
+        cos_similarities_df.loc[index] = cosine_sim(features_df.loc[index], test_features.loc[test_feat_indx])
 
     cos_results = cos_similarities_df['Cos Sim'].sort_values(ascending=False)[1:top_images + 1].index
 
@@ -115,7 +117,7 @@ def predict(test_img_path, feature_extractor, features_df):
     figure, axis = plt.subplots(rows, plots)
 
     # plot test image
-    original = load_img(list(test_image_names.keys())[0], target_size=(image_width, image_height))
+    original = load_img(list(test_features.index)[0], target_size=(image_width, image_height))
     axis[0, 1].imshow(original)
     axis[0, 1].set_title('Test Image')
 
