@@ -1,0 +1,18 @@
+from variables import *
+
+# import labels for train & val datasets
+labels_df = import_class_labels(main_dir)
+class_names = labels_df.Label.tolist()
+
+# initialize the model
+model, feat_extractor = load_model(len(class_names))
+
+# import test image & extract features
+test_df = import_images(test_img_dir, feat_extractor)
+
+
+# load dataset features
+features_df = pd.read_pickle(pickling_path)
+
+# find most similar images
+compare_similarity(test_df, features_df)
