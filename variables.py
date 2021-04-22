@@ -9,6 +9,7 @@ from numpy import dot
 from numpy.linalg import norm
 import pandas as pd
 from tqdm import tqdm
+import re
 
 ########################
 # ---- Parameters ---- #
@@ -133,9 +134,9 @@ def compare_similarity(test_features, test_prediction, features_df):
     closest_imgs_scores = cos_similarities_df['Cos Sim'].sort_values(ascending=False)[0:top_images]
 
     for i in range(len(closest_imgs)):
-        img = load_img(closest_imgs[i], target_size=(image_width, image_height))
+        actual_path = re.sub('/home/mike/Public/School/datamining/Project', main_dir, closest_imgs[i])
+        img = load_img(actual_path, target_size=(image_width, image_height))
         axis[int(i/plots)+1, (i % plots)].imshow(img)
         axis[int(i/plots)+1, (i % plots)].set_title(closest_imgs_scores[i])
 
     plt.show()
-
