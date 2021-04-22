@@ -8,7 +8,7 @@ Languages: Python
 
 2.) extract the database file into the project folder.
 
-3.) optional: download the pickle file from google drive (skip if you want to extract the features yourself (about 30 min. on my machine))
+3.) optional: download the pickle file from google drive (skip if you want to extract the features yourself (about 30 min. on an i7 6600k))
 
 4.) update all path variables in the variables.py script
 
