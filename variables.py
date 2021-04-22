@@ -53,6 +53,7 @@ def import_class_labels(main_directory):
     file_names = pd.DataFrame({'filename': files})
     # join the two df's together so we have a mapping of folder name to class name.
     labels = labels.join(file_names)
+    labels = labels.set_index('filename')
     return labels
 
 
@@ -69,27 +70,35 @@ def create_dataset(path, img_width, img_height, batch):
 def import_gen(image_name_map, f_extractor):
     # generator object for importing raw images
     for _ in tqdm(image_name_map, desc='Importing Images'):
-        original_img = load_img(_, target_size=(image_width, image_height))
+        original_img = load_img(_[1], target_size=(image_width, image_height))
         img_array = img_to_array(original_img)
         reshaped_img_array = np.expand_dims(img_array, axis=0)
         normalized_img_array = preprocess_input(reshaped_img_array)
         yield _, f_extractor.predict(normalized_img_array)
 
 
-def import_images(path, feature_extractor):
+def import_images(path, feature_extractor, labels):
     # load raw images from disk & return features dataframe
     image_name_map = []
+    image_class_map = []
     # Create a list of images to be imported (image paths on disk)
     for root, dirs, files in tqdm(os.walk(path), desc='Mapping Images'):
         for name in files:
-            image_name_map.append(os.path.join(root, name))
+            path = os.path.join(root, name)
+            image_name_map.append(path)
+            image_class_map.append(os.path.basename(os.path.dirname(path)))
+    image_class_map = list(map(lambda x: labels.loc[x].Label, image_class_map))
+    multi_index_tuple = list(zip(image_class_map, image_name_map))
+    multi_index = pd.MultiIndex.from_tuples(multi_index_tuple, names=('label', 'path'))
+
     # Create empty dataframe for features to be pasted into
-    features_df = pd.DataFrame(columns=np.arange(feature_extractor.output.shape[1]), index=image_name_map)
+    features_df = pd.DataFrame(columns=np.arange(feature_extractor.output.shape[1]), index=multi_index)
     # Use generator object 'import_gen' to iterate over list of image paths, extract feats, and paste into df
     # (approx 30 min with i7 6600k 4GHz)
-    for label, features in tqdm(import_gen(image_name_map, feature_extractor), desc='Importing Images'):
-        features_df.loc[label] = features
-    # Serialize the features df so this lengthy process does not need to be run every time.
+
+    for idx, features in tqdm(import_gen(multi_index_tuple, feature_extractor), desc='Importing Images'):
+        features_df.loc[idx] = features.tolist()[0]
+
     return features_df
 
 
@@ -97,17 +106,15 @@ def cosine_sim(a, b): return dot(a, b)/(norm(a)*norm(b))
 # Computes cosine similarity score of two numpy arrays
 
 
-def jaccard_sim(a, b): return
-# Computes jaccard similarity score of two numpy arrays
-
-
-def compare_similarity(test_features, features_df):
+def compare_similarity(test_features, test_prediction, features_df):
     # Identifies and returns the dataset images most similar to the test image
     # Compute Cosine Sim
     cos_similarities_df = pd.DataFrame(columns=['Cos Sim'])
     test_feat_indx = list(test_features.index)[0]
-    for index in tqdm(features_df.index, desc="Computing Cosine Similarity:"):
-        cos_similarities_df.loc[index] = cosine_sim(features_df.loc[index], test_features.loc[test_feat_indx])
+    for label, path in tqdm(features_df.index, desc="Computing Cosine Similarity:"):
+        if label == test_prediction:
+            cos_similarities_df.loc[path] = cosine_sim(features_df.loc[(label, path)],
+                                                       test_features.loc[test_feat_indx])
 
     cos_results = cos_similarities_df['Cos Sim'].sort_values(ascending=False)[1:top_images + 1].index
 
