@@ -8,11 +8,30 @@ class_names = labels_df.Label.tolist()
 model, feat_extractor = load_model(len(class_names))
 
 # import test image & extract features
-test_df = import_images(test_img_dir, feat_extractor)
+path = ''
+for root, dirs, files in os.walk(test_img_dir):
+    for name in files:
+        path = os.path.join(root, name)
 
+test_img = load_img(path, target_size=(image_width, image_height))
+img_array = img_to_array(test_img)
+reshaped_img_array = np.expand_dims(img_array, axis=0)
+normalized_img_array = preprocess_input(reshaped_img_array)
+test_features = feat_extractor.predict(normalized_img_array)
+test_prediction = model.predict(normalized_img_array)
+
+test_max_prob = max(test_prediction[0])
+test_index = list(test_prediction[0]).index(test_max_prob)
+
+test_prediction_label = list(labels_df.Label)[test_index]
+print(test_max_prob, test_prediction_label)
+
+# Create empty dataframe for features to be pasted into
+test_df = pd.DataFrame(columns=np.arange(feat_extractor.output.shape[1]), index=[path])
+test_df.loc[path] = test_features.tolist()[0]
 
 # load dataset features
 features_df = pd.read_pickle(pickling_path)
 
 # find most similar images
-compare_similarity(test_df, features_df)
+compare_similarity(test_df, test_prediction_label, features_df)
