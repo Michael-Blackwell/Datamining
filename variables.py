@@ -57,12 +57,12 @@ def import_class_labels(main_directory):
     return labels
 
 
-def create_dataset(path, img_width, img_height, batch):
+def create_dataset(path, img_width, img_height):
     # Create a dataset from images on disk
     dataset = tf.keras.preprocessing.image_dataset_from_directory(
         path,
-        image_size=(img_width, img_height),
-        batch_size=batch
+        image_size=(img_width, img_height)
+        # batch_size=batch
     )
     return dataset
 
@@ -138,3 +138,4 @@ def compare_similarity(test_features, test_prediction, features_df):
         axis[int(i/plots)+1, (i % plots)].set_title(closest_imgs_scores[i])
 
     plt.show()
+
